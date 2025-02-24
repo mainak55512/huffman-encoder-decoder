@@ -50,7 +50,7 @@ pub fn toBin(char: u8) [7]bool {
     return binary;
 }
 
-pub fn encodeTree(alloc: std.mem.Allocator, root: *Node, treeStr: *std.ArrayList(bool)) !void {
+pub fn encodeTree(root: *Node, treeStr: *std.ArrayList(bool)) !void {
     const current = root;
     if (current.isLeaf) {
         try treeStr.append(true);
@@ -61,8 +61,8 @@ pub fn encodeTree(alloc: std.mem.Allocator, root: *Node, treeStr: *std.ArrayList
         }
     } else {
         try treeStr.append(false);
-        try encodeTree(alloc, current.left.?, treeStr);
-        try encodeTree(alloc, current.right.?, treeStr);
+        try encodeTree(current.left.?, treeStr);
+        try encodeTree(current.right.?, treeStr);
     }
 }
 
@@ -110,7 +110,7 @@ pub fn main() !void {
     var hm = std.AutoHashMap(u8, usize).init(newAlloc);
     defer hm.deinit();
 
-    const inp_file = try std.fs.cwd().openFile("test_bak.txt", .{});
+    const inp_file = try std.fs.cwd().openFile("test.txt", .{});
     defer inp_file.close();
 
     const inpReader = inp_file.reader();
@@ -144,7 +144,7 @@ pub fn main() !void {
     var treeStr = std.ArrayList(bool).init(newAlloc);
     defer treeStr.deinit();
 
-    try encodeTree(newAlloc, prQ.items[0], &treeStr);
+    try encodeTree(prQ.items[0], &treeStr);
 
     // const encodedTreeStr = try treeStr.toOwnedSlice();
     // defer newAlloc.free(encodedTreeStr);
