@@ -66,7 +66,28 @@ pub fn encodeTree(root: *Node, treeStr: *std.ArrayList(bool)) !void {
     }
 }
 
-pub fn decodeTree() !void {}
+pub fn decodeTree(alloc: std.mem.Allocator, treeLength: u64, bit_reader: anytype) ![]u8 {
+    var length = treeLength;
+    var strBuff = std.ArrayList(u8).init(alloc);
+    while (length > 0) {
+        const char = bit_reader.readBitsNoEof(u8, 1);
+        if (char == error.EndOfStream) {
+            break;
+        } else {
+            if (try char == 0) {
+                try strBuff.append('0');
+                length -= 1;
+            } else {
+                try strBuff.append('1');
+                try strBuff.append(try decodeTreeElement(alloc, bit_reader));
+                length -= 8;
+            }
+        }
+    }
+    const decodedTree = try strBuff.toOwnedSlice();
+    strBuff.deinit();
+    return decodedTree;
+}
 
 pub fn decodeTreeElement(alloc: std.mem.Allocator, bit_reader: anytype) !u8 {
     var retrievedStr = std.ArrayList(u8).init(alloc);
@@ -88,6 +109,46 @@ pub fn decodeTreeElement(alloc: std.mem.Allocator, bit_reader: anytype) !u8 {
         value |= (elem - '0') << (6 - @as(u3, @intCast(i)));
     }
     return value;
+}
+
+pub fn readEncodedContent(alloc: std.mem.Allocator, fileLength: u64, bit_reader: anytype) ![]u8 {
+    var retrievedStr = std.ArrayList(u8).init(alloc);
+    for (fileLength) |_| {
+        const char = bit_reader.readBitsNoEof(u8, 1);
+        if (char == error.EndOfStream) {
+            break;
+        } else {
+            if (try char == 0) {
+                try retrievedStr.append('0');
+            } else {
+                try retrievedStr.append('1');
+            }
+        }
+    }
+    const encodedContent = try retrievedStr.toOwnedSlice();
+    retrievedStr.deinit();
+    return encodedContent;
+}
+
+pub fn writeAllToFile(filePath: []const u8, encodedTree: std.ArrayList(bool), encodedContent: std.ArrayList(bool)) !void {
+    const out_file = try std.fs.cwd().createFile(filePath, .{});
+    defer out_file.close();
+    var buf_writer = std.io.bufferedWriter(out_file.writer());
+    const writer = buf_writer.writer();
+    var bit_writer = std.io.bitWriter(.little, writer);
+
+    try bit_writer.writeBits(@as(u64, encodedTree.items.len), 64); //write tree length
+    try bit_writer.writeBits(@as(u64, encodedContent.items.len), 64); // write content length
+
+    for (encodedTree.items) |item| {
+        try bit_writer.writeBits(@as(u1, @intFromBool(item)), 1);
+    }
+    for (encodedContent.items) |item| {
+        try bit_writer.writeBits(@as(u1, @intFromBool(item)), 1);
+    }
+
+    try bit_writer.flushBits();
+    try buf_writer.flush();
 }
 
 pub fn compareNode(context: void, a: *Node, b: *Node) std.math.Order {
@@ -130,7 +191,6 @@ pub fn main() !void {
 
     var item_list = hm.iterator();
     while (item_list.next()) |item| {
-        // print("\nElem: {c}, Freq: {}", .{ item.key_ptr.*, item.value_ptr.* });
         try prQ.add(try createNode(treeAlloc, true, item.key_ptr.*, item.value_ptr.*, null, null));
     }
 
@@ -145,11 +205,6 @@ pub fn main() !void {
     defer treeStr.deinit();
 
     try encodeTree(prQ.items[0], &treeStr);
-
-    // const encodedTreeStr = try treeStr.toOwnedSlice();
-    // defer newAlloc.free(encodedTreeStr);
-
-    // print("\nEncoded Tree: {s}\n", .{encodedTreeStr}); //01E001U1L01D01C001Z1K1M
 
     var codeList = std.ArrayList(bool).init(newAlloc);
     defer codeList.deinit();
@@ -176,26 +231,7 @@ pub fn main() !void {
         }
     }
 
-    // print("\nEncoded: {any}\n", .{encodedStr.items});
-
-    const out_file = try std.fs.cwd().createFile("test_out.txt", .{});
-    defer out_file.close();
-    var buf_writer = std.io.bufferedWriter(out_file.writer());
-    const writer = buf_writer.writer();
-    var bit_writer = std.io.bitWriter(.little, writer);
-
-    try bit_writer.writeBits(@as(u64, treeStr.items.len), 64); //write tree length
-    try bit_writer.writeBits(@as(u64, encodedStr.items.len), 64); // write content length
-    // try writer.writeAll(encodedTreeStr);
-
-    for (treeStr.items) |item| {
-        try bit_writer.writeBits(@as(u1, @intFromBool(item)), 1);
-    }
-    for (encodedStr.items) |item| {
-        try bit_writer.writeBits(@as(u1, @intFromBool(item)), 1);
-    }
-    try bit_writer.flushBits();
-    try buf_writer.flush();
+    try writeAllToFile("test_out.txt", treeStr, encodedStr);
 
     const dec_inp_file = try std.fs.cwd().openFile("test_out.txt", .{});
     defer dec_inp_file.close();
@@ -203,49 +239,18 @@ pub fn main() !void {
     const reader = dec_inp_file.reader();
     var bit_reader = std.io.bitReader(.little, reader);
 
-    var retrievedStr = std.ArrayList(u8).init(newAlloc);
-    defer retrievedStr.deinit();
-
     const treeLength = try bit_reader.readBitsNoEof(u64, 64);
     const filelength = try bit_reader.readBitsNoEof(u64, 64);
-    // print("\n", .{});
-    // print("Tree Length: {}\n", .{treeLength});
-    // print("Content Length: {}\n", .{filelength});
-    var strBuff = std.ArrayList(u8).init(newAlloc);
-    defer strBuff.deinit();
-    for (treeLength) |_| {
-        const char = bit_reader.readBitsNoEof(u8, 1);
-        if (char == error.EndOfStream) {
-            break;
-        } else {
-            // print("\nreceived: {any}", .{char});
-            if (try char == 0) {
-                try strBuff.append('0');
-            } else {
-                try strBuff.append('1');
-            }
-        }
-    }
-    for (filelength) |_| {
-        const char = bit_reader.readBitsNoEof(u8, 1);
-        if (char == error.EndOfStream) {
-            break;
-        } else {
-            // print("\nreceived: {any}", .{char});
-            if (try char == 0) {
-                try retrievedStr.append('0');
-            } else {
-                try retrievedStr.append('1');
-            }
-        }
-    }
 
-    const contentStr = try retrievedStr.toOwnedSlice();
+    const strBuff = try decodeTree(newAlloc, treeLength, &bit_reader);
+    defer newAlloc.free(strBuff);
+
+    const contentStr = try readEncodedContent(newAlloc, filelength, &bit_reader);
     defer newAlloc.free(contentStr);
-    const bitTree = try strBuff.toOwnedSlice();
-    defer newAlloc.free(bitTree);
+    // const bitTree = try strBuff.toOwnedSlice();
+    // defer newAlloc.free(bitTree);
 
-    // print("\nEncoded Tree: {s}\n", .{bitTree});
+    print("\nEncoded Tree: {s}\n", .{strBuff});
     // print("\nActual Content: {s}\n", .{input});
-    // print("\nEncoded Content: {s}\n", .{contentStr});
+    print("\nEncoded Content: {s}\n", .{contentStr});
 }

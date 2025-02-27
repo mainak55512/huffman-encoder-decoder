@@ -1,1 +1,1 @@
-Test String for Huffman Encoding/Decoding.
+AAAAAABBBBBBCCCCDDDDDEE
