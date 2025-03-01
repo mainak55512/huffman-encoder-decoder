@@ -55,7 +55,6 @@ pub fn encodeTree(root: *Node, treeStr: *std.ArrayList(bool)) !void {
     if (current.isLeaf) {
         try treeStr.append(true);
         const boolArr = toBin(current.element.?);
-        // print("Encoded Tree Element: {any}\n", .{boolArr});
         for (boolArr) |elem| {
             try treeStr.append(elem);
         }
@@ -151,6 +150,29 @@ pub fn writeAllToFile(filePath: []const u8, encodedTree: std.ArrayList(bool), en
     try buf_writer.flush();
 }
 
+pub const Error = error{EmptyArray};
+
+pub fn readNext(elemArr: *std.ArrayList(u8)) !u8 {
+    if (elemArr.items.len > 0) {
+        return elemArr.orderedRemove(0);
+    }
+    return Error.EmptyArray;
+}
+
+pub fn rebuildTree(alloc: std.mem.Allocator, encodedTree: *std.ArrayList(u8)) !?*Node {
+    if (encodedTree.items.len > 0) {
+        const element = try readNext(encodedTree);
+        if (element == '1') {
+            const elem = try readNext(encodedTree);
+            return try createNode(alloc, true, elem, 0, null, null);
+        } else if (element == '0') {
+            const left = try rebuildTree(alloc, encodedTree);
+            const right = try rebuildTree(alloc, encodedTree);
+            return try createNode(alloc, false, null, 0, left, right);
+        }
+    }
+    return null;
+}
 pub fn compareNode(context: void, a: *Node, b: *Node) std.math.Order {
     _ = context;
     return std.math.order(a.*.frequency, b.*.frequency);
@@ -245,12 +267,16 @@ pub fn main() !void {
     const strBuff = try decodeTree(newAlloc, treeLength, &bit_reader);
     defer newAlloc.free(strBuff);
 
+    var rebuildTreeStr = std.ArrayList(u8).init(newAlloc);
+    defer rebuildTreeStr.deinit();
+    try rebuildTreeStr.appendSlice(strBuff);
+
+    const rebuiltTree = try rebuildTree(treeAlloc, &rebuildTreeStr);
+
     const contentStr = try readEncodedContent(newAlloc, filelength, &bit_reader);
     defer newAlloc.free(contentStr);
-    // const bitTree = try strBuff.toOwnedSlice();
-    // defer newAlloc.free(bitTree);
 
-    print("\nEncoded Tree: {s}\n", .{strBuff});
+    print("\nEncoded Tree: {any}\n", .{rebuiltTree});
     // print("\nActual Content: {s}\n", .{input});
     print("\nEncoded Content: {s}\n", .{contentStr});
 }
