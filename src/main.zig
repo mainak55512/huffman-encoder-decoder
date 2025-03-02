@@ -1,6 +1,8 @@
 const std = @import("std");
 const print = std.debug.print;
 
+pub const Error = error{EmptyArray};
+
 const Node = struct {
     element: ?u8,
     frequency: usize,
@@ -65,7 +67,7 @@ pub fn encodeTree(root: *Node, treeStr: *std.ArrayList(bool)) !void {
     }
 }
 
-pub fn decodeTree(alloc: std.mem.Allocator, treeLength: u64, bit_reader: anytype) ![]u8 {
+pub fn decodeTree(alloc: std.mem.Allocator, treeLength: u64, bit_reader: anytype) !std.ArrayList(u8) {
     var length = treeLength;
     var strBuff = std.ArrayList(u8).init(alloc);
     while (length > 0) {
@@ -83,9 +85,10 @@ pub fn decodeTree(alloc: std.mem.Allocator, treeLength: u64, bit_reader: anytype
             }
         }
     }
-    const decodedTree = try strBuff.toOwnedSlice();
-    strBuff.deinit();
-    return decodedTree;
+    // const decodedTree = try strBuff.toOwnedSlice();
+    // strBuff.deinit();
+    // return decodedTree;
+    return strBuff;
 }
 
 pub fn decodeTreeElement(alloc: std.mem.Allocator, bit_reader: anytype) !u8 {
@@ -110,7 +113,7 @@ pub fn decodeTreeElement(alloc: std.mem.Allocator, bit_reader: anytype) !u8 {
     return value;
 }
 
-pub fn readEncodedContent(alloc: std.mem.Allocator, fileLength: u64, bit_reader: anytype) ![]u8 {
+pub fn readEncodedContent(alloc: std.mem.Allocator, fileLength: u64, bit_reader: anytype) !std.ArrayList(u8) {
     var retrievedStr = std.ArrayList(u8).init(alloc);
     for (fileLength) |_| {
         const char = bit_reader.readBitsNoEof(u8, 1);
@@ -124,9 +127,9 @@ pub fn readEncodedContent(alloc: std.mem.Allocator, fileLength: u64, bit_reader:
             }
         }
     }
-    const encodedContent = try retrievedStr.toOwnedSlice();
-    retrievedStr.deinit();
-    return encodedContent;
+    // const encodedContent = try retrievedStr.toOwnedSlice();
+    // retrievedStr.deinit();
+    return retrievedStr;
 }
 
 pub fn writeAllToFile(filePath: []const u8, encodedTree: std.ArrayList(bool), encodedContent: std.ArrayList(bool)) !void {
@@ -150,20 +153,15 @@ pub fn writeAllToFile(filePath: []const u8, encodedTree: std.ArrayList(bool), en
     try buf_writer.flush();
 }
 
-pub const Error = error{EmptyArray};
-
-pub fn readNext(elemArr: *std.ArrayList(u8)) !u8 {
-    if (elemArr.items.len > 0) {
-        return elemArr.orderedRemove(0);
-    }
-    return Error.EmptyArray;
+pub fn readNext(elemArr: *std.ArrayList(u8)) u8 {
+    return elemArr.orderedRemove(0);
 }
 
 pub fn rebuildTree(alloc: std.mem.Allocator, encodedTree: *std.ArrayList(u8)) !?*Node {
     if (encodedTree.items.len > 0) {
-        const element = try readNext(encodedTree);
+        const element = readNext(encodedTree);
         if (element == '1') {
-            const elem = try readNext(encodedTree);
+            const elem = readNext(encodedTree);
             return try createNode(alloc, true, elem, 0, null, null);
         } else if (element == '0') {
             const left = try rebuildTree(alloc, encodedTree);
@@ -173,6 +171,31 @@ pub fn rebuildTree(alloc: std.mem.Allocator, encodedTree: *std.ArrayList(u8)) !?
     }
     return null;
 }
+
+pub fn decodeContent(rebuiltTree: *Node, encodedContent: *std.ArrayList(u8), decodedContent: *std.ArrayList(u8)) !void {
+    if (encodedContent.items.len > 0) {
+        const elem = readNext(encodedContent);
+        if (elem == '0') {
+            if (rebuiltTree.left) |left| {
+                if (left.isLeaf) {
+                    try decodedContent.append(left.element.?);
+                } else {
+                    try decodeContent(left, encodedContent, decodedContent);
+                }
+            }
+        }
+        if (elem == '1') {
+            if (rebuiltTree.right) |right| {
+                if (right.isLeaf) {
+                    try decodedContent.append(right.element.?);
+                } else {
+                    try decodeContent(right, encodedContent, decodedContent);
+                }
+            }
+        }
+    }
+}
+
 pub fn compareNode(context: void, a: *Node, b: *Node) std.math.Order {
     _ = context;
     return std.math.order(a.*.frequency, b.*.frequency);
@@ -264,19 +287,21 @@ pub fn main() !void {
     const treeLength = try bit_reader.readBitsNoEof(u64, 64);
     const filelength = try bit_reader.readBitsNoEof(u64, 64);
 
-    const strBuff = try decodeTree(newAlloc, treeLength, &bit_reader);
-    defer newAlloc.free(strBuff);
+    var strBuff = try decodeTree(newAlloc, treeLength, &bit_reader);
+    defer strBuff.deinit();
 
-    var rebuildTreeStr = std.ArrayList(u8).init(newAlloc);
-    defer rebuildTreeStr.deinit();
-    try rebuildTreeStr.appendSlice(strBuff);
+    const rebuiltTree = try rebuildTree(treeAlloc, &strBuff);
 
-    const rebuiltTree = try rebuildTree(treeAlloc, &rebuildTreeStr);
+    var contentStr = try readEncodedContent(newAlloc, filelength, &bit_reader);
+    defer contentStr.deinit();
 
-    const contentStr = try readEncodedContent(newAlloc, filelength, &bit_reader);
-    defer newAlloc.free(contentStr);
+    print("\nActual Content: {s}\n", .{input});
 
-    print("\nEncoded Tree: {any}\n", .{rebuiltTree});
-    // print("\nActual Content: {s}\n", .{input});
-    print("\nEncoded Content: {s}\n", .{contentStr});
+    var decodedContent = std.ArrayList(u8).init(newAlloc);
+    defer decodedContent.deinit();
+
+    while (contentStr.items.len > 0)
+        try decodeContent(rebuiltTree.?, &contentStr, &decodedContent);
+
+    print("Decoded Content: {s}\n", .{decodedContent.items});
 }
