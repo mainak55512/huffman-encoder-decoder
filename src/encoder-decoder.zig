@@ -20,7 +20,7 @@ pub fn createNode(alloc: std.mem.Allocator, isLeaf: bool, element: ?u8, frequenc
     return node;
 }
 
-pub fn generateCodes(root: *Node, codeList: *std.ArrayList(bool), codeTable: *std.AutoHashMap(u8, []bool), codeListGarbage: *std.ArrayList([]bool)) !void {
+pub fn generateCodes(root: *Node, codeList: *std.ArrayList(u1), codeTable: *std.AutoHashMap(u8, []u1), codeListGarbage: *std.ArrayList([]u1)) !void {
     if (root.isLeaf) {
         var tempList = try codeList.clone();
         const codeStr = try tempList.toOwnedSlice();
@@ -28,11 +28,11 @@ pub fn generateCodes(root: *Node, codeList: *std.ArrayList(bool), codeTable: *st
         try codeTable.put(root.element.?, codeStr);
     }
     if (root.left) |left| {
-        try codeList.append(false);
+        try codeList.append(0);
         try generateCodes(left, codeList, codeTable, codeListGarbage);
     }
     if (root.right) |right| {
-        try codeList.append(true);
+        try codeList.append(1);
         try generateCodes(right, codeList, codeTable, codeListGarbage);
     }
     if (codeList.items.len > 0) {
@@ -40,26 +40,26 @@ pub fn generateCodes(root: *Node, codeList: *std.ArrayList(bool), codeTable: *st
     }
 }
 
-pub fn toBin(char: u8) [7]bool {
-    var binary: [7]bool = [_]bool{false} ** 7;
+pub fn toBin(char: u8) [7]u1 {
+    var binary: [7]u1 = [_]u1{0} ** 7;
     var temp: u8 = char;
     for (0..7) |i| {
-        binary[6 - i] = if (temp % 2 == 0) false else true;
+        binary[6 - i] = if (temp % 2 == 0) 0 else 1;
         temp /= 2;
     }
     return binary;
 }
 
-pub fn encodeTree(root: *Node, treeStr: *std.ArrayList(bool)) !void {
+pub fn encodeTree(root: *Node, treeStr: *std.ArrayList(u1)) !void {
     const current = root;
     if (current.isLeaf) {
-        try treeStr.append(true);
+        try treeStr.append(1);
         const boolArr = toBin(current.element.?);
         for (boolArr) |elem| {
             try treeStr.append(elem);
         }
     } else {
-        try treeStr.append(false);
+        try treeStr.append(0);
         try encodeTree(current.left.?, treeStr);
         try encodeTree(current.right.?, treeStr);
     }
@@ -108,24 +108,7 @@ pub fn decodeTreeElement(alloc: std.mem.Allocator, bit_reader: anytype) !u8 {
     return value;
 }
 
-// pub fn readEncodedContent(alloc: std.mem.Allocator, fileLength: u64, bit_reader: anytype) !std.ArrayList(u8) {
-//     var retrievedStr = std.ArrayList(u8).init(alloc);
-//     for (fileLength) |_| {
-//         const char = bit_reader.readBitsNoEof(u8, 1);
-//         if (char == error.EndOfStream) {
-//             break;
-//         } else {
-//             if (try char == 0) {
-//                 try retrievedStr.append('0');
-//             } else {
-//                 try retrievedStr.append('1');
-//             }
-//         }
-//     }
-//     return retrievedStr;
-// }
-
-pub fn writeAllToFile(filePath: []const u8, encodedTree: std.ArrayList(bool), encodedContent: std.ArrayList(bool)) !void {
+pub fn writeAllToFile(filePath: []const u8, encodedTree: std.ArrayList(u1), encodedContent: std.ArrayList(u1)) !void {
     const out_file = try std.fs.cwd().createFile(filePath, .{});
     defer out_file.close();
     var buf_writer = std.io.bufferedWriter(out_file.writer());
@@ -136,10 +119,10 @@ pub fn writeAllToFile(filePath: []const u8, encodedTree: std.ArrayList(bool), en
     try bit_writer.writeBits(@as(u64, encodedContent.items.len), 64); // write content length
 
     for (encodedTree.items) |item| {
-        try bit_writer.writeBits(@as(u1, @intFromBool(item)), 1);
+        try bit_writer.writeBits(item, 1);
     }
     for (encodedContent.items) |item| {
-        try bit_writer.writeBits(@as(u1, @intFromBool(item)), 1);
+        try bit_writer.writeBits(item, 1);
     }
 
     try bit_writer.flushBits();
@@ -165,48 +148,7 @@ pub fn rebuildTree(alloc: std.mem.Allocator, encodedTree: *std.ArrayList(u8)) !?
     return null;
 }
 
-// pub fn readEncodedContent(alloc: std.mem.Allocator, rebuiltTree: *Node, fileLength: u64, bit_reader: anytype) !std.ArrayList(u8) {
-//     var retrievedStr = std.ArrayList(u8).init(alloc);
-//     for (fileLength) |_| {
-//         const char = bit_reader.readBitsNoEof(u8, 1);
-//         if (char == error.EndOfStream) {
-//             break;
-//         } else {
-//             if (try char == 0) {
-//                 try retrievedStr.append('0');
-//             } else {
-//                 try retrievedStr.append('1');
-//             }
-//         }
-//     }
-//     return retrievedStr;
-// }
-// pub fn decodeContent(rebuiltTree: *Node, encodedContent: *std.ArrayList(u8), decodedContent: *std.ArrayList(u8)) !void {
-//     if (encodedContent.items.len > 0) {
-//         const elem = readNext(encodedContent);
-//         if (elem == '0') {
-//             if (rebuiltTree.left) |left| {
-//                 if (left.isLeaf) {
-//                     try decodedContent.append(left.element.?);
-//                 } else {
-//                     try decodeContent(left, encodedContent, decodedContent);
-//                 }
-//             }
-//         }
-//         if (elem == '1') {
-//             if (rebuiltTree.right) |right| {
-//                 if (right.isLeaf) {
-//                     try decodedContent.append(right.element.?);
-//                 } else {
-//                     try decodeContent(right, encodedContent, decodedContent);
-//                 }
-//             }
-//         }
-//     }
-// }
-
 pub fn decodeContent(rebuiltTree: *Node, decodedContent: *std.ArrayList(u8), bit_reader: anytype) !void {
-    // const elem = readNext(encodedContent);
     const char = bit_reader.readBitsNoEof(u8, 1);
     if (char != error.EndOfStream) {
         if (try char == 0) {
@@ -273,26 +215,27 @@ pub fn huffEncoder(newAlloc: std.mem.Allocator, source: []const u8, output: []co
         try prQ.add(try createNode(treeAlloc, false, null, newFrequency, item1, item2));
     }
 
-    var treeStr = std.ArrayList(bool).init(newAlloc);
+    // var treeStr = std.ArrayList(bool).init(newAlloc);
+    var treeStr = std.ArrayList(u1).init(newAlloc);
     defer treeStr.deinit();
 
     try encodeTree(prQ.items[0], &treeStr);
 
-    var codeList = std.ArrayList(bool).init(newAlloc);
+    var codeList = std.ArrayList(u1).init(newAlloc);
     defer codeList.deinit();
 
-    var codeListGarbage = std.ArrayList([]bool).init(newAlloc);
+    var codeListGarbage = std.ArrayList([]u1).init(newAlloc);
     defer codeListGarbage.deinit();
     defer for (codeListGarbage.items) |value| {
         newAlloc.free(value);
     };
 
-    var codeTable = std.AutoHashMap(u8, []bool).init(newAlloc);
+    var codeTable = std.AutoHashMap(u8, []u1).init(newAlloc);
     defer codeTable.deinit();
 
     try generateCodes(prQ.items[0], &codeList, &codeTable, &codeListGarbage);
 
-    var encodedStr = std.ArrayList(bool).init(newAlloc);
+    var encodedStr = std.ArrayList(u1).init(newAlloc);
     defer encodedStr.deinit();
 
     for (input) |item| {
@@ -325,21 +268,13 @@ pub fn huffDecoder(newAlloc: std.mem.Allocator, source: []const u8, output: []co
 
     const rebuiltTree = try rebuildTree(treeAlloc, &strBuff);
 
-    // var contentStr = try readEncodedContent(newAlloc, filelength, &bit_reader);
-    // defer contentStr.deinit();
-
-    // print("\nActual Content: {s}\n", .{input});
-
     var decodedContent = std.ArrayList(u8).init(newAlloc);
     defer decodedContent.deinit();
 
-    // while (contentStr.items.len > 0)
-    //     try decodeContent(rebuiltTree.?, &contentStr, &decodedContent);
     for (filelength) |_| {
         try decodeContent(rebuiltTree.?, &decodedContent, &bit_reader);
     }
 
-    // print("Decoded Content: {s}\n", .{decodedContent.items});
     const outputContent = try decodedContent.toOwnedSlice();
     defer newAlloc.free(outputContent);
 

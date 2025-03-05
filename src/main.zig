@@ -8,6 +8,6 @@ pub fn main() !void {
     };
     const newAlloc = gpa.allocator();
 
-    // try huff.huffEncoder(newAlloc, "./src/encoder-decoder.zig", "test.mhuff");
+    try huff.huffEncoder(newAlloc, "test.txt", "test.mhuff");
     try huff.huffDecoder(newAlloc, "test.mhuff", "decoded.txt");
 }
